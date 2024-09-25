@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Police Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #000; /* Black background */
+            color: #fff; /* White text color */
+        }
+
+        h1 {
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #map {
+            height: 400px; 
+            width: 100%; 
+            max-width: 800px; 
+            margin-bottom: 20px; 
+        }
+
+        #remoteVideo {
+            height: 240px; 
+            width: 100%; 
+            max-width: 800px; 
+            border: 2px solid #007bff; 
+            border-radius: 8px; 
+        }
+
+        .danger {
+    font-size: 24px; /* Adjust the size as per your preference */
+    color: red;
+    animation: glow 0.9s infinite alternate; /* Animation effect */
+}
+
+/* Keyframes for red and black alternating effect */
+@keyframes glow {
+    0% {
+        color: red;
+        text-shadow: 0 0 10px red, 0 0 20px red, 0 0 30px red;
+    }
+    100% {
+        color: black;
+        text-shadow: 0 0 5px black, 0 0 10px black, 0 0 15px black;
+    }
+}
+
+    </style>
+</head>
+<body>
+    <h1>Police Dashboard</h1>
+    <h1 id="alert" class="danger"></h1>
+    <h1 id="coords" class="danger"></h1>
+    <div id="map"></div>
+    <video id="remoteVideo" autoplay muted playsinline></video>
+
+    
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    
+    <script>
+        const socket = io('http://localhost:3000'); // Change to the server's address if not running locally
+
+        const video = document.getElementById('remoteVideo');
+        let map, marker;
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([0, 0], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+            }).addTo(map);
+
+            marker = L.marker([0, 0]).addTo(map);
+        }
+
+        // Listen for location updates
+        socket.on('locationUpdate', (locationData) => {
+            const latlng = [locationData.latitude, locationData.longitude];
+            map.setView(latlng, 13);
+            marker.setLatLng(latlng);
+            document.getElementById("alert").innerHTML = "alert";
+            document.getElementById("coords").innerHTML = locationData.latitude+" , "+locationData.longitude;
+
+        });
+
+        // WebRTC video setup
+        const peerConnection = new RTCPeerConnection();
+
+        peerConnection.ontrack = event => {
+            video.srcObject = event.streams[0];
+        };
+
+        let offerReceived = false;
+        let localDescriptionSet = false;
+
+        // Listen for signaling messages
+        socket.on('signal', data => {
+            if (data.offer && !offerReceived) {
+                offerReceived = true;
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer)).then(() => {
+                    return peerConnection.createAnswer();
+                }).then(answer => {
+                    peerConnection.setLocalDescription(answer);
+                    localDescriptionSet = true;
+                    socket.emit('signal', { answer: answer });
+                });
+            } else if (data.candidate) {
+                if (localDescriptionSet) {
+                    peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
+            }
+        });
+
+        initMap();
+    </script>
+</body>
+</html>
